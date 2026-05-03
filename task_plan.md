@@ -54,11 +54,11 @@ Phase 8
 ### Phase 5: Deployment Pipeline
 - [x] Decide deployment target on Hetzner VPS
 - [x] Decide production container/runtime model
-- [ ] Configure production database and app runtime secrets
+- [x] Configure production database and app runtime secrets
 - [x] Create GitHub Actions workflow
 - [x] Add GitHub Actions secrets
-- [ ] Push workflow, run it, monitor results, and iterate
-- **Status:** in_progress
+- [x] Push workflow, run it, monitor results, and iterate
+- **Status:** complete
 
 ### Phase 6: DNS & Edge Routing
 - [x] Create or update `meal-planner.usemillie.com` DNS record
@@ -89,7 +89,7 @@ Phase 8
 - [x] Build settings screen for user and household defaults
 - [x] Simplify UI around default shadcn neutral black/white components
 - [ ] Add focused tests for data and route behavior
-- [ ] Deploy and validate product build on `bloom`
+- [x] Deploy and validate product build on `bloom`
 - **Status:** in_progress
 
 ## Key Questions

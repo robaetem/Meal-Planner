@@ -107,6 +107,11 @@
 | Local quality gates after shadcn pass | `npm run typecheck`, `npm run lint`, `npm run build` | All pass | All passed | Pass |
 | GitHub Actions secrets | `gh secret list --repo robaetem/Meal-Planner` | Required deployment secrets exist | VPS, Auth.js, OAuth, and Postgres secrets listed | Pass |
 | Docker production image build | `docker build -t meal-planner:local-shadcn-test .` | Image builds from committed sources without local `.env` | Build completed successfully | Pass |
+| GitHub Actions deployment | Workflow run `25276357249` | CI passes and deploys to bloom | Completed successfully at commit `cbd9df0` | Pass |
+| Production Kubernetes rollout | `kubectl -n meal-planner rollout status deployment/meal-planner-web` | Web deployment available | Rollout successful; web and Postgres pods running | Pass |
+| Production unauthenticated route after product deploy | `curl -I https://meal-planner.usemillie.com` | Redirects to `/signin` | HTTP 307 to `/signin` | Pass |
+| Production Google redirect after product deploy | Agent Browser click Google | Redirects to Google with production callback | Redirected to Google with `/api/auth/callback/google` | Pass |
+| Production Microsoft redirect after product deploy | Agent Browser click Microsoft | Redirects to Microsoft with production callback | Redirected to `login.live.com` with `/api/auth/callback/microsoft-entra-id` | Pass |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -130,6 +135,10 @@
 - Verified with Agent Browser on desktop and mobile, plus typecheck/lint/build.
 - Added GitHub Actions deployment secrets and adjusted the workflow so Kubernetes secrets are created before deployments are applied.
 - Verified local Docker production image build after the workflow/Dockerfile changes.
+- Pushed `main` to `https://github.com/robaetem/Meal-Planner.git`.
+- First workflow dispatch failed because a base64 Postgres password was not URL-safe in `DATABASE_URL`; patched the workflow and reran.
+- Successful deployment run: `https://github.com/robaetem/Meal-Planner/actions/runs/25276357249`.
+- Production validation after deployment: Kubernetes rollout healthy, public route redirects unauthenticated visitors to `/signin`, and both OAuth provider redirects use the production callback URLs.
 
 ## 5-Question Reboot Check
 | Question | Answer |
