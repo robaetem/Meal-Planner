@@ -117,6 +117,8 @@
 | 2026-05-02 | `agent-browser state save` saved empty `about:blank` state | 1 | Switched to persistent Agent Browser profile directories for production/local auth sessions. |
 | 2026-05-03 | `prisma migrate dev` used Prisma scaffold default `johndoe` database URL | 1 | Removed the duplicate scaffolded `DATABASE_URL` from local `.env` and kept the local Postgres URL. |
 | 2026-05-03 | Shadcn initialization failed because Tailwind CSS was not configured | 1 | Added Tailwind v4 dependencies and `postcss.config.mjs`, then reran `npx shadcn@latest init --defaults --force`. |
+| 2026-05-03 | Git push rejected workflow update because the cached Git credential lacked `workflow` scope | 1 | Retried push using the scoped `gh auth token` through a temporary HTTP auth header. |
+| 2026-05-03 | GitHub Actions deploy failed with Prisma `P1013` invalid database URL | 1 | Patched workflow to URL-encode the Postgres password, replaced the generated password with hex-only secret, and removed the failed first-run Postgres PVC/secret before rerun. |
 
 ## Session Update: 2026-05-03 Shadcn Simplification
 - User feedback: simplify heavily, use default shadcn UI as much as possible, and keep the black/white shadcn theme.

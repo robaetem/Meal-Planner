@@ -79,6 +79,7 @@ jobs:
           set -a
           . /tmp/meal-planner.deploy.env
           set +a
+          DB_PASSWORD_ENCODED=$(node -e 'console.log(encodeURIComponent(process.env.POSTGRES_PASSWORD))')
 
           APP_DIR=/opt/meal-planner
           REPO_URL=https://github.com/robaetem/Meal-Planner.git
@@ -116,7 +117,7 @@ jobs:
             --from-literal=AUTH_MICROSOFT_ENTRA_ID_ID="$AUTH_MICROSOFT_ENTRA_ID_ID" \
             --from-literal=AUTH_MICROSOFT_ENTRA_ID_SECRET="$AUTH_MICROSOFT_ENTRA_ID_SECRET" \
             --from-literal=AUTH_MICROSOFT_ENTRA_ID_ISSUER="$AUTH_MICROSOFT_ENTRA_ID_ISSUER" \
-            --from-literal=DATABASE_URL="postgresql://mealplanner:${POSTGRES_PASSWORD}@meal-planner-postgres:5432/mealplanner?schema=public" \
+            --from-literal=DATABASE_URL="postgresql://mealplanner:${DB_PASSWORD_ENCODED}@meal-planner-postgres:5432/mealplanner?schema=public" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl apply -f k8s/meal-planner.yaml
@@ -139,7 +140,7 @@ jobs:
             sleep 1
           done
 
-          DATABASE_URL="postgresql://mealplanner:${POSTGRES_PASSWORD}@127.0.0.1:54329/mealplanner?schema=public" npx prisma migrate deploy
+          DATABASE_URL="postgresql://mealplanner:${DB_PASSWORD_ENCODED}@127.0.0.1:54329/mealplanner?schema=public" npx prisma migrate deploy
           cleanup
           trap - EXIT
 
