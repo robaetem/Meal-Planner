@@ -1,0 +1,155 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Validate and deploy
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://mealplanner:mealplanner@localhost:5432/mealplanner?schema=public
+      AUTH_SECRET: build-secret
+      AUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      AUTH_ALLOWED_EMAILS: build@example.com
+      AUTH_GOOGLE_ID: build
+      AUTH_GOOGLE_SECRET: build
+      AUTH_MICROSOFT_ENTRA_ID_ID: build
+      AUTH_MICROSOFT_ENTRA_ID_SECRET: build
+      AUTH_MICROSOFT_ENTRA_ID_ISSUER: https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload deploy environment
+        run: |
+          cat > deploy.env <<'EOF'
+          GITHUB_SHA=${{ github.sha }}
+          AUTH_SECRET=${{ secrets.AUTH_SECRET }}
+          AUTH_URL=https://meal-planner.usemillie.com
+          AUTH_TRUST_HOST=true
+          AUTH_ALLOWED_EMAILS=${{ secrets.AUTH_ALLOWED_EMAILS }}
+          AUTH_GOOGLE_ID=${{ secrets.AUTH_GOOGLE_ID }}
+          AUTH_GOOGLE_SECRET=${{ secrets.AUTH_GOOGLE_SECRET }}
+          AUTH_MICROSOFT_ENTRA_ID_ID=${{ secrets.AUTH_MICROSOFT_ENTRA_ID_ID }}
+          AUTH_MICROSOFT_ENTRA_ID_SECRET=${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET }}
+          AUTH_MICROSOFT_ENTRA_ID_ISSUER=${{ secrets.AUTH_MICROSOFT_ENTRA_ID_ISSUER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          EOF
+          sed -i 's/^          //' deploy.env
+          scp -i ~/.ssh/id_ed25519 deploy.env "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/meal-planner.deploy.env"
+
+      - name: Deploy on bloom
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /tmp/meal-planner.deploy.env
+          set +a
+
+          APP_DIR=/opt/meal-planner
+          REPO_URL=https://github.com/robaetem/Meal-Planner.git
+          if [ ! -d "$APP_DIR/.git" ]; then
+            rm -rf "$APP_DIR"
+            git clone "$REPO_URL" "$APP_DIR"
+          fi
+
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard "$GITHUB_SHA"
+
+          npm ci
+          npx prisma generate
+
+          kubectl apply -f - <<'YAML'
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: meal-planner
+          YAML
+
+          kubectl -n meal-planner create secret generic meal-planner-postgres-env \
+            --from-literal=POSTGRES_USER=mealplanner \
+            --from-literal=POSTGRES_DB=mealplanner \
+            --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n meal-planner create secret generic meal-planner-web-env \
+            --from-literal=AUTH_SECRET="$AUTH_SECRET" \
+            --from-literal=AUTH_URL="$AUTH_URL" \
+            --from-literal=AUTH_TRUST_HOST="$AUTH_TRUST_HOST" \
+            --from-literal=AUTH_ALLOWED_EMAILS="$AUTH_ALLOWED_EMAILS" \
+            --from-literal=AUTH_GOOGLE_ID="$AUTH_GOOGLE_ID" \
+            --from-literal=AUTH_GOOGLE_SECRET="$AUTH_GOOGLE_SECRET" \
+            --from-literal=AUTH_MICROSOFT_ENTRA_ID_ID="$AUTH_MICROSOFT_ENTRA_ID_ID" \
+            --from-literal=AUTH_MICROSOFT_ENTRA_ID_SECRET="$AUTH_MICROSOFT_ENTRA_ID_SECRET" \
+            --from-literal=AUTH_MICROSOFT_ENTRA_ID_ISSUER="$AUTH_MICROSOFT_ENTRA_ID_ISSUER" \
+            --from-literal=DATABASE_URL="postgresql://mealplanner:${POSTGRES_PASSWORD}@meal-planner-postgres:5432/mealplanner?schema=public" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl apply -f k8s/meal-planner.yaml
+          kubectl -n meal-planner rollout status deployment/meal-planner-postgres --timeout=180s
+
+          PF_PID=""
+          cleanup() {
+            if [ -n "$PF_PID" ]; then
+              kill "$PF_PID" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          kubectl -n meal-planner port-forward svc/meal-planner-postgres 54329:5432 >/tmp/meal-planner-postgres-port-forward.log 2>&1 &
+          PF_PID=$!
+          for i in $(seq 1 30); do
+            if nc -z 127.0.0.1 54329; then
+              break
+            fi
+            sleep 1
+          done
+
+          DATABASE_URL="postgresql://mealplanner:${POSTGRES_PASSWORD}@127.0.0.1:54329/mealplanner?schema=public" npx prisma migrate deploy
+          cleanup
+          trap - EXIT
+
+          docker build -t "meal-planner:${GITHUB_SHA}" .
+          docker save "meal-planner:${GITHUB_SHA}" | k3s ctr images import -
+          kubectl -n meal-planner set image deployment/meal-planner-web web="meal-planner:${GITHUB_SHA}"
+          kubectl -n meal-planner rollout status deployment/meal-planner-web --timeout=180s
+          kubectl -n meal-planner get deploy,svc,pods
+          REMOTE
+
+      - name: Cleanup deploy environment
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" 'rm -f /tmp/meal-planner.deploy.env' || true

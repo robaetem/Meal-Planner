@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+}
+
+enum IngredientScope {
+  ROBIN
+  AMBER
+  PREPARATION
+}
+
+enum MealEater {
+  BOTH
+  ROBIN
+  AMBER
+}
+
+enum AssignmentType {
+  RECIPE
+  FREEZER
+}
+
+model AppUser {
+  id          String            @id @default(cuid())
+  email       String            @unique
+  name        String?
+  image       String?
+  memberships HouseholdMember[]
+  recipes     Recipe[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Household {
+  id              String            @id @default(cuid())
+  name            String
+  members         HouseholdMember[]
+  recipes         Recipe[]
+  freezerItems    FreezerItem[]
+  planningPeriods PlanningPeriod[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model HouseholdMember {
+  id          String    @id @default(cuid())
+  householdId String
+  userId      String
+  role        MemberRole @default(MEMBER)
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user        AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([householdId, userId])
+}
+
+model Recipe {
+  id              String             @id @default(cuid())
+  householdId     String
+  createdByUserId String?
+  name            String
+  description     String?
+  prepMinutes     Int?
+  cookMinutes     Int?
+  sourceUrl       String?
+  tags            String?
+  instructions    String?
+  household       Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy       AppUser?           @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  ingredients     RecipeIngredient[]
+  plannedMeals    PlannedMeal[]
+  freezerItems    FreezerItem[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([householdId, name])
+}
+
+model RecipeIngredient {
+  id        String          @id @default(cuid())
+  recipeId  String
+  scope     IngredientScope
+  name      String
+  quantity  Float?
+  unit      String?
+  notes     String?
+  sortOrder Int             @default(0)
+  recipe    Recipe          @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([recipeId, sortOrder])
+}
+
+model PlanningPeriod {
+  id                      String             @id @default(cuid())
+  householdId             String
+  startDate               DateTime
+  endDate                 DateTime
+  collectAndGoPickupDate  DateTime?
+  color                   String
+  household               Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  plannedMeals            PlannedMeal[]
+  shoppingListItems       ShoppingListItem[]
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@index([householdId, startDate, endDate])
+}
+
+model PlannedMeal {
+  id               String         @id @default(cuid())
+  planningPeriodId String
+  date             DateTime
+  eater            MealEater
+  assignmentType   AssignmentType
+  recipeId         String?
+  freezerItemId    String?        @unique
+  robinPortions    Int            @default(0)
+  amberPortions    Int            @default(0)
+  notes            String?
+  planningPeriod   PlanningPeriod @relation(fields: [planningPeriodId], references: [id], onDelete: Cascade)
+  recipe           Recipe?        @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  freezerItem      FreezerItem?   @relation(fields: [freezerItemId], references: [id], onDelete: SetNull)
+  shoppingItems    ShoppingListItem[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([planningPeriodId, date])
+}
+
+model FreezerItem {
+  id             String        @id @default(cuid())
+  householdId    String
+  recipeId       String?
+  name           String
+  category       String?
+  robinPortions  Int           @default(0)
+  amberPortions  Int           @default(0)
+  notes          String?
+  frozenAt       DateTime?
+  usedAt         DateTime?
+  household      Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  recipe         Recipe?       @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  plannedMeal    PlannedMeal?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([householdId, usedAt, category])
+}
+
+model ShoppingListItem {
+  id               String          @id @default(cuid())
+  planningPeriodId String
+  sourcePlannedMealId String?
+  name             String
+  quantity         Float?
+  unit             String?
+  notes            String?
+  checked          Boolean         @default(false)
+  manual           Boolean         @default(true)
+  sortOrder        Int             @default(0)
+  planningPeriod   PlanningPeriod  @relation(fields: [planningPeriodId], references: [id], onDelete: Cascade)
+  sourcePlannedMeal PlannedMeal?    @relation(fields: [sourcePlannedMealId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([planningPeriodId, sortOrder])
+}
